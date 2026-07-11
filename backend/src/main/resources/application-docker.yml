@@ -1,0 +1,41 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: taskflow-backend
+
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:mysql}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:taskflow}?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USER:taskflow_user}
+    password: ${MYSQL_PASSWORD:taskflow_pass}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+
+  data:
+    mongodb:
+      uri: mongodb://${MONGO_HOST:mongo}:${MONGO_PORT:27017}/${MONGO_DATABASE:taskflow_logs}
+
+jwt:
+  secret: ${JWT_SECRET:c2VjcmV0LWtleS1mb3ItdGFza2Zsb3ctcGxlYXNlLWNoYW5nZS1pbi1wcm9kdWN0aW9uLTEyMzQ1Ng==}
+  expiration-ms: 86400000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  level:
+    com.taskflow: INFO

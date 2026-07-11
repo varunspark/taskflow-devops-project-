@@ -1,0 +1,46 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: taskflow-backend
+
+  # ---- MySQL (relational data: users, projects, tasks) ----
+  datasource:
+    url: jdbc:mysql://localhost:3306/taskflow?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true
+    username: taskflow_user
+    password: taskflow_pass
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update       # auto-creates/updates tables from our @Entity classes
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.MySQLDialect
+
+  # ---- MongoDB (flexible data: comments, activity logs) ----
+  data:
+    mongodb:
+      uri: mongodb://localhost:27017/taskflow_logs
+
+# ---- JWT settings ----
+jwt:
+  secret: c2VjcmV0LWtleS1mb3ItdGFza2Zsb3ctcGxlYXNlLWNoYW5nZS1pbi1wcm9kdWN0aW9uLTEyMzQ1Ng==
+  expiration-ms: 86400000    # 24 hours
+
+# ---- Actuator (health check endpoint used by Docker/Kubernetes) ----
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  level:
+    com.taskflow: INFO

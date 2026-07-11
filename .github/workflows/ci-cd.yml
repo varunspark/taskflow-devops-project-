@@ -1,0 +1,162 @@
+name: CI/CD Pipeline
+
+# When this pipeline runs:
+# - on every push to main: run the full pipeline including deploy steps
+# - on every pull request: run tests/build only, never deploy
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Required so this workflow can request an OIDC token from GitHub,
+# which we exchange for temporary AWS credentials - no long-lived AWS keys
+# are ever stored as GitHub secrets. This is the pattern real companies use.
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  DOCKERHUB_REPO_BACKEND: ${{ secrets.DOCKERHUB_USERNAME }}/taskflow-backend
+  DOCKERHUB_REPO_FRONTEND: ${{ secrets.DOCKERHUB_USERNAME }}/taskflow-frontend
+
+jobs:
+
+  # ---------------- Job 1: Test & build the backend ----------------
+  backend-test:
+    name: Backend - Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+          cache: maven
+
+      - name: Run backend tests
+        working-directory: ./backend
+        run: mvn -B test
+
+      - name: Build backend jar
+        working-directory: ./backend
+        run: mvn -B clean package -DskipTests
+
+  # ---------------- Job 2: Test & build the frontend ----------------
+  frontend-test:
+    name: Frontend - Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package.json
+
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: npm install
+
+      - name: Run frontend tests
+        working-directory: ./frontend
+        run: CI=true npm test
+
+      - name: Build frontend
+        working-directory: ./frontend
+        run: npm run build
+
+  # ---------------- Job 3: Build & push Docker images (main branch only) ----------------
+  build-and-push:
+    name: Build & Push Docker Images
+    needs: [backend-test, frontend-test]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build & push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ${{ env.DOCKERHUB_REPO_BACKEND }}:latest
+            ${{ env.DOCKERHUB_REPO_BACKEND }}:${{ github.sha }}
+
+      - name: Build & push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            ${{ env.DOCKERHUB_REPO_FRONTEND }}:latest
+            ${{ env.DOCKERHUB_REPO_FRONTEND }}:${{ github.sha }}
+
+  # ---------------- Job 4: Terraform plan (always runs on main, shows the diff) ----------------
+  terraform-plan:
+    name: Terraform Plan
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # This is the differentiator: instead of storing a permanent AWS access key
+      # as a GitHub secret, GitHub issues a short-lived OIDC token for this run,
+      # and AWS trusts it (because we configured an IAM role that trusts GitHub's
+      # OIDC provider - see terraform/README.md for that one-time setup).
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-south-1
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: terraform init
+
+      - name: Terraform Plan
+        working-directory: ./terraform
+        run: terraform plan -no-color
+
+  # ---------------- Job 5: Terraform apply (manual approval gate) ----------------
+  terraform-apply:
+    name: Terraform Apply (Production)
+    needs: terraform-plan
+    runs-on: ubuntu-latest
+    # "environment: production" makes GitHub require a human to click "Approve"
+    # in the Actions tab before this job runs, if you configure a required
+    # reviewer on the "production" environment in your repo settings.
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-south-1
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: terraform init
+
+      - name: Terraform Apply
+        working-directory: ./terraform
+        run: terraform apply -auto-approve

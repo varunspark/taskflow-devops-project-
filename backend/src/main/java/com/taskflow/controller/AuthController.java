@@ -1,0 +1,51 @@
+package com.taskflow.controller;
+
+import com.taskflow.dto.AuthRequest;
+import com.taskflow.dto.AuthResponse;
+import com.taskflow.dto.RegisterRequest;
+import com.taskflow.entity.User;
+import com.taskflow.repository.UserRepository;
+import com.taskflow.security.JwtUtil;
+import com.taskflow.service.UserService;
+import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/auth")
+public class AuthController {
+
+    private final UserService userService;
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtUtil jwtUtil;
+
+    public AuthController(UserService userService, UserRepository userRepository,
+                           PasswordEncoder passwordEncoder, JwtUtil jwtUtil) {
+        this.userService = userService;
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.jwtUtil = jwtUtil;
+    }
+
+    @PostMapping("/register")
+    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
+        User user = userService.register(request);
+        String token = jwtUtil.generateToken(user.getUsername());
+        return ResponseEntity.ok(new AuthResponse(token, user.getId(), user.getUsername(), user.getFullName()));
+    }
+
+    @PostMapping("/login")
+    public ResponseEntity<AuthResponse> login(@Valid @RequestBody AuthRequest request) {
+        User user = userRepository.findByUsername(request.getUsername())
+                .orElseThrow(() -> new IllegalArgumentException("Invalid username or password"));
+
+        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+            throw new IllegalArgumentException("Invalid username or password");
+        }
+
+        String token = jwtUtil.generateToken(user.getUsername());
+        return ResponseEntity.ok(new AuthResponse(token, user.getId(), user.getUsername(), user.getFullName()));
+    }
+}

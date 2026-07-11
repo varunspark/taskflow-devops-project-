@@ -1,0 +1,93 @@
+version: "3.9"
+
+services:
+
+  # ---------------- MySQL: structured data (users, projects, tasks) ----------------
+  mysql:
+    image: mysql:8.0
+    container_name: taskflow-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: taskflow
+      MYSQL_USER: taskflow_user
+      MYSQL_PASSWORD: taskflow_pass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpass"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - taskflow-net
+
+  # ---------------- MongoDB: flexible data (comments, activity logs) ----------------
+  mongo:
+    image: mongo:7.0
+    container_name: taskflow-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - taskflow-net
+
+  # ---------------- Backend: Spring Boot API ----------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: taskflow-backend
+    restart: unless-stopped
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: taskflow
+      MYSQL_USER: taskflow_user
+      MYSQL_PASSWORD: taskflow_pass
+      MONGO_HOST: mongo
+      MONGO_PORT: 27017
+      MONGO_DATABASE: taskflow_logs
+      JWT_SECRET: c2VjcmV0LWtleS1mb3ItdGFza2Zsb3ctcGxlYXNlLWNoYW5nZS1pbi1wcm9kdWN0aW9uLTEyMzQ1Ng==
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    networks:
+      - taskflow-net
+
+  # ---------------- Frontend: React app served via nginx ----------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        REACT_APP_API_URL: http://localhost:8080/api
+    container_name: taskflow-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - taskflow-net
+
+volumes:
+  mysql_data:
+  mongo_data:
+
+networks:
+  taskflow-net:
+    driver: bridge

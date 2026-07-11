@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: taskflow
+spec:
+  replicas: 2   # 2 copies running - if one crashes, the other keeps serving traffic
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0   # Never take down a pod until its replacement is healthy
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          # Replace with your Docker Hub image once the CI/CD pipeline has pushed one
+          image: YOUR_DOCKERHUB_USERNAME/taskflow-backend:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: MYSQL_HOST
+              value: mysql
+            - name: MONGO_HOST
+              value: mongo
+            - name: MYSQL_DATABASE
+              value: taskflow
+            - name: MYSQL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: taskflow-secrets
+                  key: mysql-user
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: taskflow-secrets
+                  key: mysql-password
+            - name: MONGO_DATABASE
+              value: taskflow_logs
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: taskflow-secrets
+                  key: jwt-secret
+          # readinessProbe: "is this pod ready to receive traffic RIGHT NOW?"
+          # If this fails, Kubernetes stops sending requests to this pod
+          # but doesn't restart it - useful for temporary slowness.
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+
+          # livenessProbe: "is this pod still alive/functioning at all?"
+          # If this fails repeatedly, Kubernetes KILLS and RESTARTS the pod.
+          # This is what gives us the "automated rollback on failed health check" behavior.
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 45
+            periodSeconds: 15
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "384Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: taskflow
+spec:
+  selector:
+    app: backend
+  ports:
+    - port: 8080
+      targetPort: 8080
