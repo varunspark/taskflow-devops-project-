@@ -17,8 +17,8 @@ permissions:
   contents: read
 
 env:
-  DOCKERHUB_REPO_BACKEND: ${{ secrets.DOCKERHUB_USERNAME }}/taskflow-backend
-  DOCKERHUB_REPO_FRONTEND: ${{ secrets.DOCKERHUB_USERNAME }}/taskflow-frontend
+  DOCKERHUB_REPO_BACKEND: varunspark/taskflow-backend
+  DOCKERHUB_REPO_FRONTEND: varunspark/taskflow-frontend
 
 jobs:
 
