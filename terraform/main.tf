@@ -1,3 +1,19 @@
+resource "tls_private_key" "ssh_key" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
+resource "aws_key_pair" "taskflow_key" {
+  key_name   = "${var.project_name}-key"
+  public_key = tls_private_key.ssh_key.public_key_openssh
+}
+
+resource "local_file" "private_key" {
+  content         = tls_private_key.ssh_key.private_key_pem
+  filename        = "${path.module}/taskflow-key.pem"
+  file_permission = "0400"
+}
+
 # ---------------------------------------------------------------------------
 # Finds the latest Amazon Linux 2023 image automatically, so you never have
 # to hunt for an AMI ID by hand (they change over time / differ per region).
@@ -66,6 +82,7 @@ resource "aws_security_group" "taskflow_sg" {
 resource "aws_instance" "taskflow_server" {
   ami                    = data.aws_ami.amazon_linux.id
   instance_type          = var.instance_type
+  key_name               = aws_key_pair.taskflow_key.key_name
   vpc_security_group_ids = [aws_security_group.taskflow_sg.id]
 
   user_data = templatefile("${path.module}/user_data.sh", {

@@ -15,5 +15,5 @@ output "backend_api_url" {
 
 output "ssh_command" {
   description = "How to SSH into the server if you need to debug it"
-  value       = "ssh ec2-user@${aws_instance.taskflow_server.public_ip}"
+  value       = "ssh -i taskflow-key.pem ec2-user@${aws_instance.taskflow_server.public_ip}"
 }
